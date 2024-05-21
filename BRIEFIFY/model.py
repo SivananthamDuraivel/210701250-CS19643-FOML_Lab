@@ -3,17 +3,24 @@ from nltk.corpus import stopwords
 from nltk.cluster.util import cosine_distance
 import numpy as np
 import networkx as nx
+import spacy
+from collections import Counter
+
+# Ensure necessary downloads
+nltk.download("stopwords")
+
+# Load spaCy's English model
+nlp = spacy.load('en_core_web_sm')
 
 # Function to read the article
-def read_article(file_name):
-    file = open(file_name, "r")
-    filedata = file.readlines()
-    article = filedata[0].split(". ")
+def read_article(text):
+    article = text.split(". ")
     sentences = []
 
     for sentence in article:
         sentences.append(sentence.replace("[^a-zA-Z]", " ").split(" "))
-    sentences.pop() 
+    if sentences[-1] == ['']:  # Remove any empty strings
+        sentences.pop() 
     
     return sentences
 
@@ -36,7 +43,7 @@ def sentence_similarity(sent1, sent2, stopwords=None):
             continue
         vector1[all_words.index(w)] += 1
  
-    # build the vector for the second sentence``
+    # build the vector for the second sentence
     for w in sent2:
         if w in stopwords:
             continue
@@ -58,26 +65,48 @@ def build_similarity_matrix(sentences, stop_words):
     return similarity_matrix
 
 # Function to generate summary
-def generate_summary(file_name, top_n=5):
-    nltk.download("stopwords")
+def generate_summary(text, top_n=5):
     stop_words = stopwords.words('english')
     summarize_text = []
 
     # Read text and split it
-    sentences =  read_article(file_name)
+    sentences =  read_article(text)
 
     # Generate Similarity Matrix across sentences
-    sentence_similarity_martix = build_similarity_matrix(sentences, stop_words)
+    sentence_similarity_matrix = build_similarity_matrix(sentences, stop_words)
 
     # Rank sentences in similarity matrix
-    sentence_similarity_graph = nx.from_numpy_array(sentence_similarity_martix)
+    sentence_similarity_graph = nx.from_numpy_array(sentence_similarity_matrix)
     scores = nx.pagerank(sentence_similarity_graph)
 
     # Sort the rank and pick top sentences
-    ranked_sentence = sorted(((scores[i],s) for i,s in enumerate(sentences)), reverse=True)    
+    ranked_sentence = sorted(((scores[i], s) for i, s in enumerate(sentences)), reverse=True)    
 
     for i in range(top_n):
         summarize_text.append(" ".join(ranked_sentence[i][1]))
 
     # Output the summarized text
     return ". ".join(summarize_text)
+
+# Function to read the input file
+def read_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return file.read()
+
+# Function to extract keywords
+def extract_keywords(text, top_n=10):
+    doc = nlp(text)
+    
+    # Extract named entities and noun chunks
+    entities = [ent.text for ent in doc.ents if ent.label_ in ['PERSON', 'ORG', 'GPE', 'LOC', 'EVENT']]
+    noun_chunks = [chunk.text for chunk in doc.noun_chunks if len(chunk) > 1]
+    
+    # Combine and count the frequency of entities and noun chunks
+    all_phrases = entities + noun_chunks
+    frequency = Counter(all_phrases)
+    
+    # Get the most common phrases
+    most_common_phrases = frequency.most_common(top_n)
+    keywords = [phrase for phrase, count in most_common_phrases]
+    
+    return keywords
